@@ -2,7 +2,7 @@
 
 Code and reproducibility package for the paper:
 
-**Benchmarking Posted Quotes under Transaction-Price Opacity: A Computational Market Approach for Data Asset Markets**
+**Benchmarking Posted Quotes under Transaction-Price Opacity: A Computational Market Approach to Data Asset Pricing**
 
 ## Overview
 
