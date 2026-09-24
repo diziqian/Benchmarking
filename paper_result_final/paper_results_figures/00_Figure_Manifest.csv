@@ -1,0 +1,6 @@
+﻿Manuscript figure,Filename,Purpose
+Fig. 3,Fig_3_Absolute_Log_Price_Error_Distributions_Under_Supplier_Cold_Start.png,Absolute log-price error distributions under supplier cold start
+Appendix Fig. A1,Appendix_Fig_A1_Distribution_of_Standardized_Posted_Quotes_Before_and_After_Log_Transformation.png,Distribution of standardized posted quotes before and after log transformation
+Appendix Fig. A2,Appendix_Fig_A2_Descriptive_Evidence_of_Supplier_Level_Clustering_in_Posted_Quotes.png,Descriptive evidence of supplier-level clustering in posted quotes
+Appendix Fig. B1,Appendix_Fig_B1_Residual_Diagnostics_for_the_Global_Prior_under_KFold.png,Residual diagnostics for the global prior under KFold
+Appendix Fig. B2,Appendix_Fig_B2_Residual_Diagnostics_for_the_Global_Prior_under_GroupKFold.png,Residual diagnostics for the global prior under Group KFold
