@@ -36,7 +36,7 @@ is NOT a graph-embedding table. Within every outer fold, graph embeddings and te
 are re-estimated from the outer-training observations only, preventing test-fold leakage.
 Auxiliary graph validation uses common fold-specific random seeds so topology or dimension
 changes are not confounded with arbitrary seed changes. KFold results are always reported
-before GroupKFold results.
+before Group KFold results.
 """
 
 
@@ -387,6 +387,136 @@ def build_manuscript_table_1_distribution(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame([row(df[COL_PRICE], "price (USD/call)"), row(df["log_price"], "ln(price)")])
 
 
+# ================= Manuscript display formatting =================
+# Keep computational/intermediate objects numeric, but make every manuscript-facing
+# table reproduce the paper's visible precision and missing-value symbols exactly.
+EM_DASH = "—"
+
+
+def _paper_fixed(x, digits: int = 3, missing: str = "") -> str:
+    if pd.isna(x):
+        return missing
+    return f"{float(x):.{digits}f}"
+
+
+def _paper_pct_value(x, digits: int = 2, missing: str = EM_DASH) -> str:
+    if pd.isna(x):
+        return missing
+    return f"{100.0 * float(x):.{digits}f}%"
+
+
+def _paper_int(x, missing: str = "") -> str:
+    if pd.isna(x):
+        return missing
+    return str(int(round(float(x))))
+
+
+def _paper_compact3(x, missing: str = "") -> str:
+    """Appendix C1 convention: exact integers such as 0/1/5 are shown without decimals;
+    otherwise values are shown to three decimals."""
+    if pd.isna(x):
+        return missing
+    z = float(x)
+    if abs(z - round(z)) < 1e-12:
+        return str(int(round(z)))
+    return f"{z:.3f}"
+
+
+def _paper_sci(x, mantissa_digits: int = 2, missing: str = "") -> str:
+    if pd.isna(x):
+        return missing
+    mant, exp = f"{float(x):.{mantissa_digits}e}".split("e")
+    iexp = int(exp)
+    sign = "−" if iexp < 0 else ("+" if iexp > 0 else "")
+    return f"{mant}e{sign}{abs(iexp)}" if iexp != 0 else mant
+
+
+def format_table1_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    """Match manuscript Table 1 display precision exactly."""
+    out = df.copy().astype(object)
+    for i, r in out.iterrows():
+        out.at[i, "Obs."] = _paper_int(r["Obs."])
+        if str(r["Var."]) == "price (USD/call)":
+            for c in ["Mean", "SD", "P25", "Median", "P75"]:
+                out.at[i, c] = _paper_fixed(r[c], 4)
+            out.at[i, "Min"] = _paper_sci(r["Min"], 2)
+            out.at[i, "Max"] = _paper_fixed(r["Max"], 3)
+        else:
+            for c in ["Mean", "SD", "Min", "P25", "Median", "P75", "Max"]:
+                out.at[i, c] = _paper_fixed(r[c], 3)
+    return out
+
+
+def format_appendix_a1_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    if "Estimate" in out.columns:
+        out["Estimate"] = out["Estimate"].apply(lambda x: _paper_fixed(x, 3))
+    return out
+
+
+def format_appendix_b1_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    if out.empty:
+        return out
+    if "Obs." in out.columns:
+        out["Obs."] = out["Obs."].apply(_paper_int)
+    for c in ["Mean", "SD", "Skewness", "Excess Kurtosis", "JB Statistic", "JB p-value",
+              "Shapiro Statistic", "Shapiro p-value"]:
+        if c in out.columns:
+            out[c] = out[c].apply(lambda x: _paper_fixed(x, 3))
+    return out
+
+
+def format_appendix_c1_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    if out.empty:
+        return out
+    if "N" in out.columns:
+        out["N"] = out["N"].apply(_paper_int)
+    for c in [c for c in out.columns if c not in {"CV Protocol", "Variant", "N"}]:
+        out[c] = out[c].apply(_paper_compact3)
+    return out
+
+
+def format_appendix_c2_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    for c in [c for c in out.columns if c not in {"CV Protocol", "Method"}]:
+        out[c] = out[c].apply(lambda x: _paper_fixed(x, 3))
+    return out
+
+
+def format_appendix_c3_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    if "Obs." in out.columns:
+        out["Obs."] = out["Obs."].apply(_paper_int)
+    if "Obs" in out.columns:
+        out["Obs"] = out["Obs"].apply(_paper_int)
+    for c in [c for c in out.columns if c not in {"CV Protocol", "Variant", "Subset", "Obs.", "Obs"}]:
+        out[c] = out[c].apply(lambda x: _paper_fixed(x, 3))
+    return out
+
+
+def format_appendix_c4_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    if "Decile" in out.columns:
+        out["Decile"] = out["Decile"].apply(_paper_int)
+    for c in [c for c in out.columns if c not in {"CV Protocol", "Decile"}]:
+        out[c] = out[c].apply(lambda x: _paper_fixed(x, 3))
+    return out
+
+
+def format_main_table3_for_paper(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().astype(object)
+    for c in ["KFold R2", "Group KFold R2"]:
+        if c in out.columns:
+            out[c] = out[c].apply(lambda x: _paper_fixed(x, 3, EM_DASH))
+    if "Group PI95 Coverage" in out.columns:
+        out["Group PI95 Coverage"] = out["Group PI95 Coverage"].apply(lambda x: _paper_pct_value(x, 2, EM_DASH))
+    if "Group Avg Width" in out.columns:
+        out["Group Avg Width"] = out["Group Avg Width"].apply(lambda x: _paper_fixed(x, 3, EM_DASH))
+    return out
+
+
 def build_supplier_summary(df: pd.DataFrame) -> pd.DataFrame:
     g = df.groupby(COL_SUPPLIER)["log_price"]
     out = pd.DataFrame({
@@ -512,8 +642,15 @@ def run_descriptive_block(input_path: str) -> pd.DataFrame:
     anchor_table = build_appendix_table_a1_supplier_clustering(df)
 
     sample_audit.to_csv(os.path.join(OUT_DESC, "I02_Sample_Audit.csv"), index=False, encoding="utf-8-sig")
-    dist_table.to_csv(os.path.join(OUT_DESC, "I03_Table_1_Distribution_of_Posted_Quotes_USD.csv"), index=False, encoding="utf-8-sig")
-    anchor_table.to_csv(os.path.join(OUT_DESC, "I04_Appendix_Table_A1_Supplier_Level_Clustering.csv"), index=False, encoding="utf-8-sig")
+    # Manuscript-facing CSVs reproduce the paper's visible precision exactly.
+    format_table1_for_paper(dist_table).to_csv(
+        os.path.join(OUT_DESC, "I03_Table_1_Distribution_of_Posted_Quotes_USD.csv"),
+        index=False, encoding="utf-8-sig"
+    )
+    format_appendix_a1_for_paper(anchor_table).to_csv(
+        os.path.join(OUT_DESC, "I04_Appendix_Table_A1_Supplier_Level_Clustering.csv"),
+        index=False, encoding="utf-8-sig"
+    )
     build_supplier_summary(df).to_csv(os.path.join(OUT_DESC, "I05_Supplier_Summary.csv"), index=False, encoding="utf-8-sig")
 
     build_appendix_fig_a1_distribution(df, OUT_FIG)
@@ -805,7 +942,7 @@ def run_unified_cv(df, splitter, cv_name, capture_primary_cache=False):
 
     When capture_primary_cache=True, this function additionally stores the exact
     graph/text feature blocks and core OOF predictions produced by the primary
-    run. The cache is consumed only after the full KFold -> GroupKFold sequence has
+    run. The cache is consumed only after the full KFold -> Group KFold sequence has
     completed, so later validation stages cannot perturb the primary RNG sequence. Test rows never enter graph/text fitting.
     """
     print(f"\n--- Executing {cv_name} ---", flush=True)
@@ -821,11 +958,11 @@ def run_unified_cv(df, splitter, cv_name, capture_primary_cache=False):
 
         tr_df = df.iloc[tr_idx].copy().reset_index(drop=True)
         te_df = df.iloc[te_idx].copy().reset_index(drop=True)
-        if cv_name == "GroupKFold":
+        if cv_name == "Group KFold":
             tr_sup = set(tr_df[GROUP_COL].astype(str))
             te_sup = set(te_df[GROUP_COL].astype(str))
             if not tr_sup.isdisjoint(te_sup):
-                raise AssertionError(f"GroupKFold fold {fold}: supplier leakage detected.")
+                raise AssertionError(f"Group KFold fold {fold}: supplier leakage detected.")
 
         # Primary LCMA graph/text fitting: training fold only.
         # Text and graph transforms are each computed once per fold and reused by
@@ -1154,7 +1291,7 @@ def build_high_disagreement_table(diag_df):
     shrinkage argument: subset size, mean lambda, WAPE, and upper-tail errors.
     """
     rows = []
-    for cv_name in ["KFold", "GroupKFold"]:
+    for cv_name in ["KFold", "Group KFold"]:
         dcv = diag_df[diag_df["CV Protocol"] == cv_name].copy()
         if len(dcv) == 0:
             continue
@@ -1199,7 +1336,7 @@ def build_high_disagreement_table(diag_df):
 
 def build_decile_gain_table(diag_df):
     rows = []
-    for cv in ["KFold", "GroupKFold"]:
+    for cv in ["KFold", "Group KFold"]:
         sdf = diag_df[diag_df["CV Protocol"] == cv].copy()
         gap_col = "prior_local_gap_gap"
         sdf = sdf.sort_values(gap_col).copy()
@@ -1222,7 +1359,7 @@ def build_decile_gain_table(diag_df):
                 "Mean_Neighbors": float(sub["n_gap"].mean()),
             })
     out = pd.DataFrame(rows)
-    cv_order = {"KFold": 1, "GroupKFold": 2}
+    cv_order = {"KFold": 1, "Group KFold": 2}
     out["CV_Order"] = out["CV Protocol"].map(cv_order)
     out = out.sort_values(["CV_Order", "Decile"]).drop(columns=["CV_Order"]).reset_index(drop=True)
     return out
@@ -1232,7 +1369,7 @@ def build_decile_gain_table(diag_df):
 def run_main_appendix(main_input: str | None = None, max_folds=None):
     """Run the primary LCMA main/appendix pipeline once and retain reusable fold caches.
 
-    The published/primary pipeline remains KFold first and GroupKFold second. The
+    The published/primary pipeline remains KFold first and Group KFold second. The
     returned cache is additive: it stores exact feature blocks/predictions from this
     single execution so component decomposition does not rerun the fused KG+Text arm.
     """
@@ -1250,15 +1387,15 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
         kf = kf[:max_folds]
         gkf = gkf[:max_folds]
 
-    # Complete the entire primary KFold -> GroupKFold sequence before structural validation.
+    # Complete the entire primary KFold -> Group KFold sequence before structural validation.
     r1, p1, d1, c1 = run_unified_cv(df, kf, "KFold", capture_primary_cache=True)
-    r2, p2, d2, c2 = run_unified_cv(df_shuf, gkf, "GroupKFold", capture_primary_cache=True)
+    r2, p2, d2, c2 = run_unified_cv(df_shuf, gkf, "Group KFold", capture_primary_cache=True)
     res_df = pd.concat([r1, r2], ignore_index=True)
     p_all = pd.concat([p1, p2], ignore_index=True)
     d_all = pd.concat([d1, d2], ignore_index=True)
     primary_fold_cache = {**{("KFold", k): v for k, v in c1.items()},
-                           **{("GroupKFold", k): v for k, v in c2.items()}}
-    protocol_specs = [("KFold", df, kf), ("GroupKFold", df_shuf, gkf)]
+                           **{("Group KFold", k): v for k, v in c2.items()}}
+    protocol_specs = [("KFold", df, kf), ("Group KFold", df_shuf, gkf)]
 
     p_all.to_csv(os.path.join(OUT_MAIN, "I06_Primary_OOF_Predictions.csv"), index=False)
     d_all.to_csv(os.path.join(OUT_MAIN, "I07_Bayesian_Reconciliation_Detail.csv"), index=False)
@@ -1268,7 +1405,7 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
     ).reset_index()
 
     # Additive numeric intermediate outputs; formatted paper outputs below are preserved.
-    cv_order_map = {"KFold": 1, "GroupKFold": 2}
+    cv_order_map = {"KFold": 1, "Group KFold": 2}
     res_df["CV_Order"] = res_df["CV Protocol"].map(cv_order_map)
     res_df = res_df.sort_values(["CV_Order", "Fold", "Method"], kind="stable").drop(columns=["CV_Order"]).reset_index(drop=True)
     res_df.to_csv(os.path.join(OUT_MAIN, "I08_Primary_Fold_Metrics.csv"), index=False, encoding="utf-8-sig")
@@ -1293,12 +1430,12 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
         return lambda r: f"{r[(c, 'mean')]:.3f} ({r[(c, 'std')]:.3f})"
 
     def fmt_cov(x):
-        return f"{x * 100:.2f}%" if pd.notna(x) else "-"
+        return f"{x * 100:.2f}%" if pd.notna(x) else EM_DASH
 
     def fmt_wid(x):
-        return f"{x:.3f}" if pd.notna(x) else "-"
+        return f"{x:.3f}" if pd.notna(x) else EM_DASH
 
-    agg["CV_Order"] = agg["CV Protocol"].map({"KFold": 1, "GroupKFold": 2})
+    agg["CV_Order"] = agg["CV Protocol"].map({"KFold": 1, "Group KFold": 2})
 
     # ---------- Main Table 2 ----------
     table2_methods = {"Prior (Ridge)": 1, "KNN (Mean)": 2, "KNN (GapTrim)": 3, "Bayes (Mean)": 4, "Bayes (GapTrim)": 5}
@@ -1307,7 +1444,7 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
     table2_df = table2_df.sort_values(["CV_Order", "Order"]).reset_index(drop=True)
 
     table2_output = pd.DataFrame()
-    table2_output["CV Protocol"] = table2_df["CV Protocol"].replace({"GroupKFold": "Group KFold"})
+    table2_output["CV Protocol"] = table2_df["CV Protocol"].replace({"Group KFold": "Group KFold"})
     table2_output["Method"] = table2_df["Method"]
     table2_output["R2"] = table2_df.apply(fmt_m('R2'), axis=1)
     table2_output["RMSE"] = table2_df.apply(fmt_m('RMSE'), axis=1)
@@ -1326,7 +1463,7 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
     appendix_e1_df = appendix_e1_df.sort_values(["CV_Order", "Order"]).reset_index(drop=True)
 
     appendix_e1_output = pd.DataFrame()
-    appendix_e1_output["CV Protocol"] = appendix_e1_df["CV Protocol"].replace({"GroupKFold": "Group KFold"})
+    appendix_e1_output["CV Protocol"] = appendix_e1_df["CV Protocol"].replace({"Group KFold": "Group KFold"})
     appendix_e1_output["Method"] = appendix_e1_df["Method"]
     appendix_e1_output["R2"] = appendix_e1_df.apply(fmt_m('R2'), axis=1)
     appendix_e1_output["RMSE"] = appendix_e1_df.apply(fmt_m('RMSE'), axis=1)
@@ -1340,10 +1477,10 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
     b3 = build_high_disagreement_table(d_all).copy()
     b4 = build_decile_gain_table(d_all).copy()
 
-    b1["CV Protocol"] = b1["CV Protocol"].replace({"GroupKFold": "Group KFold"})
-    b2["CV Protocol"] = b2["CV Protocol"].replace({"GroupKFold": "Group KFold"})
-    b3["CV Protocol"] = b3["CV Protocol"].replace({"GroupKFold": "Group KFold"})
-    b4["CV Protocol"] = b4["CV Protocol"].replace({"GroupKFold": "Group KFold"})
+    b1["CV Protocol"] = b1["CV Protocol"].replace({"Group KFold": "Group KFold"})
+    b2["CV Protocol"] = b2["CV Protocol"].replace({"Group KFold": "Group KFold"})
+    b3["CV Protocol"] = b3["CV Protocol"].replace({"Group KFold": "Group KFold"})
+    b4["CV Protocol"] = b4["CV Protocol"].replace({"Group KFold": "Group KFold"})
 
     variant_bucket_order = lambda v: 1 if v == "Mean" else (2 if str(v).startswith("Mean |") else (3 if v == "Gap" else (4 if str(v).startswith("Gap |") else 9)))
     subset_order = {"Top25% prior-local disagreement": 1, "Top10% prior-local disagreement": 2}
@@ -1365,10 +1502,16 @@ def run_main_appendix(main_input: str | None = None, max_folds=None):
     b4["CV_Order"] = b4["CV Protocol"].map({"KFold":1, "Group KFold":2})
     b4 = b4.sort_values(["CV_Order", "Decile"]).drop(columns=["CV_Order"]).reset_index(drop=True)
 
-    b1.to_csv(os.path.join(OUT_MAIN, "I11_Appendix_Table_C1_Shrinkage_Diagnostics.csv"), index=False)
-    b2.to_csv(os.path.join(OUT_MAIN, "I12_Appendix_Table_C2_Tail_Risk.csv"), index=False)
-    b3.to_csv(os.path.join(OUT_MAIN, "I13_Appendix_Table_C3_High_Disagreement.csv"), index=False)
-    b4.to_csv(os.path.join(OUT_MAIN, "I14_Appendix_Table_C4_Decile_Gain.csv"), index=False)
+    # Freeze the visible precision to the manuscript convention before any paper-facing export.
+    b1 = format_appendix_c1_for_paper(b1)
+    b2 = format_appendix_c2_for_paper(b2)
+    b3 = format_appendix_c3_for_paper(b3)
+    b4 = format_appendix_c4_for_paper(b4)
+
+    b1.to_csv(os.path.join(OUT_MAIN, "I11_Appendix_Table_C1_Shrinkage_Diagnostics.csv"), index=False, encoding="utf-8-sig")
+    b2.to_csv(os.path.join(OUT_MAIN, "I12_Appendix_Table_C2_Tail_Risk.csv"), index=False, encoding="utf-8-sig")
+    b3.to_csv(os.path.join(OUT_MAIN, "I13_Appendix_Table_C3_High_Disagreement.csv"), index=False, encoding="utf-8-sig")
+    b4.to_csv(os.path.join(OUT_MAIN, "I14_Appendix_Table_C4_Decile_Gain.csv"), index=False, encoding="utf-8-sig")
 
     print("\n[SUCCESS] Generated ordered primary intermediate files:")
     for fn in [
@@ -1435,7 +1578,7 @@ def _apply_journal_style():
 def build_manuscript_fig_3_absolute_log_price_error(pred):
     ensure_dir(OUT_FIG)
     _apply_journal_style()
-    gkf = pred[pred["CV Protocol"].isin(["Group KFold", "GroupKFold"])].copy()
+    gkf = pred[pred["CV Protocol"].isin(["Group KFold", "Group KFold"])].copy()
     methods = ["Prior (Ridge)", "KNN (GapTrim)", "Bayes (GapTrim)"]
     palette = {
         "Prior (Ridge)": COLORS["prior"],
@@ -1526,7 +1669,7 @@ BOOTSTRAP_REPS = 5000
 EMBEDDING_DIM_GRID = (16, 32, 64)
 GRAPH_VALIDATION_REPEATS = 3
 
-CV_PROTOCOL_ORDER = {"KFold": 1, "GroupKFold": 2, "Group KFold": 2}
+CV_PROTOCOL_ORDER = {"KFold": 1, "Group KFold": 2, "Group KFold": 2}
 
 # Explicit manuscript order. Never rely on alphabetical sorting for method/stage labels.
 # This is especially important for Appendix Tables D4, D5, and D7.
@@ -1580,7 +1723,7 @@ def validation_common_seed(cv_name: str, fold: int, repeat: int = 0, salt: int =
     therefore receive the same seed. This isolates the intended design change as far
     as possible and avoids the dimension+seed confounding present in earlier drafts.
     """
-    cv_code = 100_000 if cv_name == "GroupKFold" else 0
+    cv_code = 100_000 if cv_name == "Group KFold" else 0
     return int(SEED + cv_code + fold * 1009 + repeat * 100_003 + salt)
 
 
@@ -1799,7 +1942,7 @@ def primary_baseline_from_cache(protocol_specs, primary_fold_cache):
 def calibration_split(tr_df, cv_name, seed):
     rng = np.random.RandomState(seed)
     n = len(tr_df)
-    if cv_name == "GroupKFold":
+    if cv_name == "Group KFold":
         groups = np.array(sorted(tr_df[GROUP_COL].astype(str).unique()))
         rng.shuffle(groups)
         n_cal_g = max(1, int(round(VALIDATION_CALIB_FRAC * len(groups))))
@@ -1933,7 +2076,7 @@ def run_supplier_topology_validation(protocol_specs, primary_fold_cache, *, repe
         ("Text + KG full (matched-seed)", "fused", True, False),
         ("Text + KG supplier-neutral (matched-seed)", "fused", False, True),
     ]
-    for cv_name, dcv, splits in protocol_specs:  # KFold -> GroupKFold
+    for cv_name, dcv, splits in protocol_specs:  # KFold -> Group KFold
         for fold, (tr_idx, te_idx) in enumerate(splits, 1):
             tr_df = dcv.iloc[tr_idx].reset_index(drop=True)
             te_df = dcv.iloc[te_idx].reset_index(drop=True)
@@ -1996,7 +2139,7 @@ def run_supplier_topology_validation(protocol_specs, primary_fold_cache, *, repe
 def paired_bootstrap_comparisons(core_pred_long, topology_pred_avg=None, *, B=BOOTSTRAP_REPS, seed=SEED+9090):
     """Paired bootstrap for core representation gains and matched-topology mechanisms.
 
-    KFold resamples OOF observations. GroupKFold resamples suppliers as clusters.
+    KFold resamples OOF observations. Group KFold resamples suppliers as clusters.
     Multi-seed topology predictions are averaged per OOF observation before resampling,
     preventing random-seed repeats from being treated as independent observations.
     """
@@ -2021,7 +2164,7 @@ def paired_bootstrap_comparisons(core_pred_long, topology_pred_avg=None, *, B=BO
 
     methods = ["global", "local_gap", "bayes_gap"]
     out = []
-    for cv in ["KFold", "GroupKFold"]:
+    for cv in ["KFold", "Group KFold"]:
         for source_df, cand, baseline, label in comparison_specs:
             d = source_df[source_df["CV Protocol"] == cv].copy()
             a = d[d["Representation"] == cand]
@@ -2039,7 +2182,7 @@ def paired_bootstrap_comparisons(core_pred_long, topology_pred_avg=None, *, B=BO
                 stable = zlib.crc32(f"{cv}|{label}|{method}".encode("utf-8")) % 1_000_000
                 rng = np.random.default_rng(seed + stable)
                 vals = []
-                if cv == "GroupKFold":
+                if cv == "Group KFold":
                     clusters = m["supplier_A"].astype(str).to_numpy()
                     uniq = np.unique(clusters)
                     cluster_to_idx = {g: np.where(clusters == g)[0] for g in uniq}
@@ -2079,7 +2222,7 @@ def embedding_dimension_sensitivity(protocol_specs, *, repeats=GRAPH_VALIDATION_
     """
     embedding_cache = {} if embedding_cache is None else embedding_cache
     rows = []
-    for cv_name, dcv, splits in protocol_specs:  # KFold first, then GroupKFold
+    for cv_name, dcv, splits in protocol_specs:  # KFold first, then Group KFold
         use = splits if max_folds is None else splits[:max_folds]
         for fold, (tr_idx, te_idx) in enumerate(use, 1):
             tr_df = dcv.iloc[tr_idx].reset_index(drop=True)
@@ -2141,7 +2284,7 @@ def paired_bootstrap_architecture(architecture_pred_df, *, B=BOOTSTRAP_REPS, see
       3) Bayes vs Tuned non-Bayes: incremental contribution of reliability-sensitive
          Bayesian reconciliation over a trained convex fusion benchmark.
 
-    KFold resamples OOF observations; GroupKFold resamples supplier clusters.
+    KFold resamples OOF observations; Group KFold resamples supplier clusters.
     """
     if architecture_pred_df is None or architecture_pred_df.empty:
         return pd.DataFrame()
@@ -2154,7 +2297,7 @@ def paired_bootstrap_architecture(architecture_pred_df, *, B=BOOTSTRAP_REPS, see
          "Bayes (GapTrim)", "Global + Local (tuned convex, non-Bayes)"),
     ]
     out = []
-    for cv in ["KFold", "GroupKFold"]:
+    for cv in ["KFold", "Group KFold"]:
         d = architecture_pred_df[architecture_pred_df["CV Protocol"] == cv].copy()
         if d.empty:
             continue
@@ -2166,7 +2309,7 @@ def paired_bootstrap_architecture(architecture_pred_df, *, B=BOOTSTRAP_REPS, see
             stable = zlib.crc32(f"architecture|{cv}|{label}".encode("utf-8")) % 1_000_000
             rng = np.random.default_rng(seed + stable)
             vals = []
-            if cv == "GroupKFold":
+            if cv == "Group KFold":
                 clusters = d["supplier"].astype(str).to_numpy()
                 uniq = np.unique(clusters)
                 cluster_to_idx = {g: np.where(clusters == g)[0] for g in uniq}
@@ -2223,11 +2366,11 @@ def run_structural_validation(primary_results, graph_validation_repeats=GRAPH_VA
         for fold, (tr_idx, te_idx) in enumerate(splits, 1):
             if set(map(int, tr_idx)).intersection(set(map(int, te_idx))):
                 raise AssertionError(f"{cv_name} fold {fold}: train/test row overlap detected.")
-            if cv_name == "GroupKFold":
+            if cv_name == "Group KFold":
                 tr_sup = set(dcv.iloc[tr_idx][GROUP_COL].astype(str))
                 te_sup = set(dcv.iloc[te_idx][GROUP_COL].astype(str))
                 if not tr_sup.isdisjoint(te_sup):
-                    raise AssertionError(f"GroupKFold fold {fold}: supplier leakage detected.")
+                    raise AssertionError(f"Group KFold fold {fold}: supplier leakage detected.")
 
     primary_metrics, primary_preds = primary_baseline_from_cache(protocols, primary_fold_cache)
     metrics, pred_long, alpha_rows, architecture_pred_rows = list(primary_metrics), list(primary_preds), [], []
@@ -2235,7 +2378,7 @@ def run_structural_validation(primary_results, graph_validation_repeats=GRAPH_VA
     # ------------------------------------------------------------------
     # 3.1 Controlled representation contribution.
     # ------------------------------------------------------------------
-    for cv_name, dcv, splits in protocols:  # KFold -> GroupKFold
+    for cv_name, dcv, splits in protocols:  # KFold -> Group KFold
         for fold, (tr_idx, te_idx) in enumerate(splits, 1):
             print(f"[representation + architecture] {cv_name} fold {fold}/{len(splits)}")
             tr_df = dcv.iloc[tr_idx].reset_index(drop=True)
@@ -2496,7 +2639,7 @@ def run_statistical_robustness(primary_results, structural_results, *, bootstrap
 
 
 def build_final_empirical_results(primary_results, structural_results, robustness_results):
-    """Build a manuscript-aligned unified result table, with KFold before GroupKFold.
+    """Build a manuscript-aligned unified result table, with KFold before Group KFold.
 
     The table follows the empirical argument rather than the historical order in which
     code modules were developed: main empirical evidence -> structural/mechanism
@@ -2738,9 +2881,9 @@ def export_manuscript_empirical_sequence(primary_results, structural_results, ro
     compact = pd.concat([rep_main, arch_main], ignore_index=True, sort=False)
     keys = ["Panel", "Specification", "Method"]
     k = compact[compact["CV Protocol"] == "KFold"][keys + ["R2_mean", "RMSE_mean"]].copy()
-    g = compact[compact["CV Protocol"] == "GroupKFold"][keys + ["R2_mean", "RMSE_mean"]].copy()
+    g = compact[compact["CV Protocol"] == "Group KFold"][keys + ["R2_mean", "RMSE_mean"]].copy()
     k = k.rename(columns={"R2_mean": "KFold R2", "RMSE_mean": "KFold RMSE"})
-    g = g.rename(columns={"R2_mean": "GroupKFold R2", "RMSE_mean": "GroupKFold RMSE"})
+    g = g.rename(columns={"R2_mean": "Group KFold R2", "RMSE_mean": "Group KFold RMSE"})
     manuscript_table3 = k.merge(g, on=keys, how="outer")
     panel_order = {"Panel A: Representation contribution": 1, "Panel B: Architecture contribution": 2}
     rep_order = {"Text only": 1, "KG only": 2, "KG + Text": 3}
@@ -2835,7 +2978,7 @@ def build_appendix_b_from_primary_predictions(pred_df: pd.DataFrame) -> tuple[pd
     ensure_dir(OUT_MAIN)
     ensure_dir(OUT_FIG)
     rows, detail = [], []
-    for cv in ["KFold", "GroupKFold"]:
+    for cv in ["KFold", "Group KFold"]:
         d = pred_df[pred_df["CV Protocol"] == cv].copy()
         if d.empty:
             continue
@@ -2871,14 +3014,15 @@ def build_appendix_b_from_primary_predictions(pred_df: pd.DataFrame) -> tuple[pd
         axes[1].set_title(f"(b) {cv}: normal Q–Q plot")
         axes[1].grid(linestyle="--", alpha=0.4)
         fig.tight_layout()
-        stem = "Appendix_Fig_B1_Residual_Diagnostics_for_the_Global_Prior_under_KFold" if cv == "KFold" else "Appendix_Fig_B2_Residual_Diagnostics_for_the_Global_Prior_under_GroupKFold"
+        stem = "Appendix_Fig_B1_Residual_Diagnostics_for_the_Global_Prior_under_KFold" if cv == "KFold" else "Appendix_Fig_B2_Residual_Diagnostics_for_the_Global_Prior_under_Group KFold"
         save_png_pdf(fig, stem, OUT_FIG)
 
     summary = pd.DataFrame(rows)
     residual_detail = pd.concat(detail, ignore_index=True) if detail else pd.DataFrame()
-    summary.to_csv(Path(OUT_MAIN) / "I16_Appendix_Table_B1_Gaussian_Working_Approximation.csv", index=False, encoding="utf-8-sig")
+    summary_paper = format_appendix_b1_for_paper(summary)
+    summary_paper.to_csv(Path(OUT_MAIN) / "I16_Appendix_Table_B1_Gaussian_Working_Approximation.csv", index=False, encoding="utf-8-sig")
     residual_detail.to_csv(Path(OUT_MAIN) / "I17_Appendix_B_Residual_Detail.csv", index=False, encoding="utf-8-sig")
-    return summary, residual_detail
+    return summary_paper, residual_detail
 
 
 def build_appendix_d_tables(structural_results, robustness_results) -> dict[str, pd.DataFrame]:
@@ -2961,7 +3105,7 @@ def build_main_table3(structural_results: dict) -> pd.DataFrame:
         ("KG only", "Bayes (GapTrim)", "KG only — Bayes GapTrim"),
         ("KG + Text", "Bayes (GapTrim)", "KG + Text — Bayes GapTrim"),
     ]:
-        k, g = get("KFold", rep, method), get("GroupKFold", rep, method)
+        k, g = get("KFold", rep, method), get("Group KFold", rep, method)
         if k is not None and g is not None:
             rows.append({
                 "Panel": "Panel A. Representation ablation",
@@ -2981,7 +3125,7 @@ def build_main_table3(structural_results: dict) -> pd.DataFrame:
         ("Bayes (GapTrim)", "Bayes reconciliation (GapTrim)"),
     ]
     for method, label in arch_labels:
-        k, g = get("KFold", "KG + Text", method), get("GroupKFold", "KG + Text", method)
+        k, g = get("KFold", "KG + Text", method), get("Group KFold", "KG + Text", method)
         if k is not None and g is not None:
             rows.append({
                 "Panel": "Panel B. Architecture ablation (KG + Text)",
@@ -2991,14 +3135,14 @@ def build_main_table3(structural_results: dict) -> pd.DataFrame:
                 "Group PI95 Coverage": float(g["Coverage_mean"]) if pd.notna(g.get("Coverage_mean", np.nan)) else np.nan,
                 "Group Avg Width": float(g["Width_mean"]) if pd.notna(g.get("Width_mean", np.nan)) else np.nan,
             })
-    return pd.DataFrame(rows)
+    return format_main_table3_for_paper(pd.DataFrame(rows))
 
 
 def _format_mean_sd(df: pd.DataFrame, mean_col: str, sd_col: str, digits: int = 3) -> pd.Series:
     def f(r):
         m, sd = r.get(mean_col, np.nan), r.get(sd_col, np.nan)
         if pd.isna(m):
-            return np.nan
+            return EM_DASH
         if pd.isna(sd):
             return f"{float(m):.{digits}f}"
         return f"{float(m):.{digits}f} ({float(sd):.{digits}f})"
@@ -3006,12 +3150,12 @@ def _format_mean_sd(df: pd.DataFrame, mean_col: str, sd_col: str, digits: int = 
 
 
 def _format_pct(x, digits=2):
-    return np.nan if pd.isna(x) else f"{100.0*float(x):.{digits}f}%"
+    return EM_DASH if pd.isna(x) else f"{100.0*float(x):.{digits}f}%"
 
 
 def _format_ci(delta, lo, hi, digits=3):
     if pd.isna(delta):
-        return np.nan
+        return EM_DASH
     return f"{float(delta):+.{digits}f} [{float(lo):+.{digits}f}, {float(hi):+.{digits}f}]"
 
 
@@ -3022,37 +3166,44 @@ def build_appendix_d_paper_tables(structural_results, robustness_results) -> dic
     d1 = raw["D1"].copy()
     if not d1.empty:
         d1 = pd.DataFrame({
-            "CV protocol": d1["CV Protocol"].replace({"GroupKFold":"Group KFold"}),
+            "CV protocol": d1["CV Protocol"].replace({"Group KFold":"Group KFold"}),
             "Representation": d1["Representation"],
             "Method": d1["Method"],
             "R2 mean (SD)": _format_mean_sd(d1, "R2_mean", "R2_sd"),
             "RMSE mean (SD)": _format_mean_sd(d1, "RMSE_mean", "RMSE_sd"),
             "WAPE mean (SD)": _format_mean_sd(d1, "WAPE_mean", "WAPE_sd"),
             "PI95 Coverage": d1["Coverage_mean"].apply(_format_pct),
-            "Avg Width": d1["Width_mean"].apply(lambda x: np.nan if pd.isna(x) else round(float(x), 3)),
+            "Avg Width": d1["Width_mean"].apply(lambda x: _paper_fixed(x, 3, EM_DASH)),
         })
 
     d2 = raw["D2"].copy()
     if not d2.empty:
         d2 = pd.DataFrame({
-            "CV protocol": d2["CV Protocol"].replace({"GroupKFold":"Group KFold"}),
+            "CV protocol": d2["CV Protocol"].replace({"Group KFold":"Group KFold"}),
             "Method": d2["Method"],
             "R2 mean (SD)": _format_mean_sd(d2, "R2_mean", "R2_sd"),
             "RMSE mean (SD)": _format_mean_sd(d2, "RMSE_mean", "RMSE_sd"),
             "WAPE mean (SD)": _format_mean_sd(d2, "WAPE_mean", "WAPE_sd"),
             "PI95 Coverage": d2["Coverage_mean"].apply(_format_pct),
-            "Avg Width": d2["Width_mean"].apply(lambda x: np.nan if pd.isna(x) else round(float(x), 3)),
+            "Avg Width": d2["Width_mean"].apply(lambda x: _paper_fixed(x, 3, EM_DASH)),
         })
 
     d3 = raw["D3"].copy()
     if not d3.empty:
-        d3["CV Protocol"] = d3["CV Protocol"].replace({"GroupKFold":"GroupKFold"})
+        d3["CV Protocol"] = d3["CV Protocol"].replace({"Group KFold":"Group KFold"})
+        if "Fold" in d3.columns:
+            d3["Fold"] = d3["Fold"].apply(_paper_int)
+        if "Tuned-convex local weight alpha" in d3.columns:
+            d3["Tuned-convex local weight alpha"] = d3["Tuned-convex local weight alpha"].apply(lambda x: _paper_fixed(x, 2))
+        for c in ["Calibration RMSE", "50/50 conformal q95", "Tuned conformal q95"]:
+            if c in d3.columns:
+                d3[c] = d3[c].apply(lambda x: _paper_fixed(x, 3))
 
     d4r = raw["D4"].copy()
     d4 = pd.DataFrame()
     if not d4r.empty:
         d4 = pd.DataFrame({
-            "CV protocol": d4r["CV Protocol"].replace({"GroupKFold":"GroupKFold"}),
+            "CV protocol": d4r["CV Protocol"].replace({"Group KFold":"Group KFold"}),
             "Comparison": d4r["Comparison"],
             "Stage": d4r["Method stage"].replace({"global":"Global", "local_gap":"Local GapTrim", "bayes_gap":"Bayes GapTrim"}),
             "Delta R2 [95% CI]": d4r.apply(lambda r: _format_ci(r["Delta R2 (Candidate-Baseline)"], r["Delta R2 CI2.5"], r["Delta R2 CI97.5"]), axis=1),
@@ -3063,7 +3214,7 @@ def build_appendix_d_paper_tables(structural_results, robustness_results) -> dic
     d5 = pd.DataFrame()
     if not d5r.empty:
         d5 = pd.DataFrame({
-            "CV protocol": d5r["CV Protocol"].replace({"GroupKFold":"Group KFold"}),
+            "CV protocol": d5r["CV Protocol"].replace({"Group KFold":"Group KFold"}),
             "Comparison": d5r["Comparison"],
             "Candidate": d5r["Candidate"],
             "Baseline": d5r["Baseline"],
@@ -3075,7 +3226,7 @@ def build_appendix_d_paper_tables(structural_results, robustness_results) -> dic
     d6 = pd.DataFrame()
     if not d6r.empty:
         d6 = pd.DataFrame({
-            "CV protocol": d6r["CV Protocol"].replace({"GroupKFold":"GroupKFold"}),
+            "CV protocol": d6r["CV Protocol"].replace({"Group KFold":"Group KFold"}),
             "Representation": d6r["Representation"].replace({
                 "Text + KG full (matched-seed)":"Text + full KG",
                 "Text + KG supplier-neutral (matched-seed)":"Text + supplier-neutral KG",
@@ -3087,14 +3238,14 @@ def build_appendix_d_paper_tables(structural_results, robustness_results) -> dic
             }),
             "R2 mean (SD)": _format_mean_sd(d6r, "R2_mean", "R2_sd"),
             "RMSE mean (SD)": _format_mean_sd(d6r, "RMSE_mean", "RMSE_sd"),
-            "Mean seed SD of R2": d6r["R2_seed_sd_mean"].round(3),
+            "Mean seed SD of R2": d6r["R2_seed_sd_mean"].apply(lambda x: _paper_fixed(x, 3, EM_DASH)),
         })
 
     d7r = raw["D7"].copy()
     d7 = pd.DataFrame()
     if not d7r.empty:
         d7 = pd.DataFrame({
-            "CV protocol": d7r["CV Protocol"].replace({"GroupKFold":"GroupKFold"}),
+            "CV protocol": d7r["CV Protocol"].replace({"Group KFold":"Group KFold"}),
             "Stage": d7r["Method stage"].replace({"global":"Global", "local_gap":"Local GapTrim", "bayes_gap":"Bayes GapTrim"}),
             "Delta R2 neutral-full [95% CI]": d7r.apply(lambda r: _format_ci(r["Delta R2 (Candidate-Baseline)"], r["Delta R2 CI2.5"], r["Delta R2 CI97.5"]), axis=1),
             "Delta RMSE neutral-full [95% CI]": d7r.apply(lambda r: _format_ci(r["Delta RMSE (Candidate-Baseline)"], r["Delta RMSE CI2.5"], r["Delta RMSE CI97.5"]), axis=1),
@@ -3105,7 +3256,7 @@ def build_appendix_d_paper_tables(structural_results, robustness_results) -> dic
     if not d8r.empty:
         rows=[]
         for (cv, dim), g in d8r.groupby(["CV Protocol", "Graph-embedding dimension"], sort=False):
-            row={"CV protocol":"GroupKFold" if cv=="GroupKFold" else cv, "Dimension":int(dim)}
+            row={"CV protocol":"Group KFold" if cv=="Group KFold" else cv, "Dimension":int(dim)}
             for method, col in [("Global (Ridge)","Global R2 (fold SD; seed SD)"),
                                 ("Local (KNN GapTrim)","Local GapTrim R2 (fold SD; seed SD)"),
                                 ("Bayes (GapTrim)","Bayes GapTrim R2 (fold SD; seed SD)")]:
@@ -3117,7 +3268,7 @@ def build_appendix_d_paper_tables(structural_results, robustness_results) -> dic
                     row[col]=f"{float(rr['R2_mean']):.3f} ({float(rr['R2_sd']):.3f}; {float(rr['R2_seed_sd_mean']):.3f})"
             rows.append(row)
         d8=pd.DataFrame(rows)
-        d8["__cv"] = d8["CV protocol"].map({"KFold":1,"GroupKFold":2})
+        d8["__cv"] = d8["CV protocol"].map({"KFold":1,"Group KFold":2})
         d8=d8.sort_values(["__cv","Dimension"]).drop(columns="__cv").reset_index(drop=True)
 
     tables = {"D1":d1,"D2":d2,"D3":d3,"D4":d4,"D5":d5,"D6":d6,"D7":d7,"D8":d8}
@@ -3207,10 +3358,10 @@ def export_complete_reproducibility_workbook(primary_results, structural_results
     ensure_dir(OUT_TABLES)
     d = build_appendix_d_paper_tables(structural_results, robustness_results)
 
-    main1 = pd.read_csv(Path(OUT_DESC) / "I03_Table_1_Distribution_of_Posted_Quotes_USD.csv")
+    main1 = pd.read_csv(Path(OUT_DESC) / "I03_Table_1_Distribution_of_Posted_Quotes_USD.csv", dtype=str, keep_default_na=False)
     main2 = primary_results["table2"].copy()
     main3 = build_main_table3(structural_results)
-    app_a1 = pd.read_csv(Path(OUT_DESC) / "I04_Appendix_Table_A1_Supplier_Level_Clustering.csv")
+    app_a1 = pd.read_csv(Path(OUT_DESC) / "I04_Appendix_Table_A1_Supplier_Level_Clustering.csv", dtype=str, keep_default_na=False)
     app_b1 = appendix_b_summary.copy()
     app_c1 = primary_results["appendix_c1"].copy()
     app_c2 = primary_results["appendix_c2"].copy()
@@ -3246,7 +3397,7 @@ def export_complete_reproducibility_workbook(primary_results, structural_results
         ["Input: KG snapshot", Path(DEFAULT_KG_SNAPSHOT).name, "Authoritative portable snapshot for pid, historical row order, src_list, and app_list; not a precomputed embedding table"],
         ["Currency", f"1 USD = {CNY_PER_USD} CNY", "Excel already stores price in USD/call; price_CNY preserves source CNY; the program validates but does not reconvert"],
         ["Sample", "2,879 listings / 256 suppliers", "The supplied Excel file is already the manuscript analytical sample"],
-        ["Model validation", "KFold then supplier-held-out GroupKFold", "All fold-dependent learning/tuning uses training-fold information only"],
+        ["Model validation", "KFold then supplier-held-out Group KFold", "All fold-dependent learning/tuning uses training-fold information only"],
         ["Workbook order", "01-18", "Sheets follow current manuscript Table 1-3, Appendix A-E order"],
     ]
     manifest = pd.DataFrame(manifest_rows, columns=["Item", "Value", "Definition"])
@@ -3296,12 +3447,12 @@ def export_complete_reproducibility_workbook(primary_results, structural_results
 
 
 def validate_final_result_order(final_table: pd.DataFrame) -> None:
-    """Enforce the manuscript-wide reporting order: all KFold rows precede GroupKFold rows."""
+    """Enforce the manuscript-wide reporting order: all KFold rows precede Group KFold rows."""
     if final_table.empty:
         raise AssertionError("Final empirical result table is empty.")
     order = final_table["CV Protocol"].map(CV_PROTOCOL_ORDER).to_numpy()
     if np.any(np.diff(order) < 0):
-        raise AssertionError("Final result ordering error: KFold must precede GroupKFold.")
+        raise AssertionError("Final result ordering error: KFold must precede Group KFold.")
 
 
 def main():
@@ -3389,7 +3540,7 @@ def main():
     # Phase 2. Main empirical evidence and Appendix C/E inputs.
     # ------------------------------------------------------------------
     phase_t0 = time.perf_counter()
-    print("\n=== Phase 2/5: Main empirical evidence (KFold -> GroupKFold) ===", flush=True)
+    print("\n=== Phase 2/5: Main empirical evidence (KFold -> Group KFold) ===", flush=True)
     primary_results = run_main_appendix(main_input=generated_snapshot, max_folds=args.max_folds)
     build_manuscript_fig_3_absolute_log_price_error(primary_results["predictions"])
     appendix_b_summary, appendix_b_detail = build_appendix_b_from_primary_predictions(primary_results["predictions"])
@@ -3439,7 +3590,7 @@ def main():
         ["Appendix Fig. A1", "Appendix_Fig_A1_Distribution_of_Standardized_Posted_Quotes_Before_and_After_Log_Transformation.png", "Distribution of standardized posted quotes before and after log transformation"],
         ["Appendix Fig. A2", "Appendix_Fig_A2_Descriptive_Evidence_of_Supplier_Level_Clustering_in_Posted_Quotes.png", "Descriptive evidence of supplier-level clustering in posted quotes"],
         ["Appendix Fig. B1", "Appendix_Fig_B1_Residual_Diagnostics_for_the_Global_Prior_under_KFold.png", "Residual diagnostics for the global prior under KFold"],
-        ["Appendix Fig. B2", "Appendix_Fig_B2_Residual_Diagnostics_for_the_Global_Prior_under_GroupKFold.png", "Residual diagnostics for the global prior under Group KFold"],
+        ["Appendix Fig. B2", "Appendix_Fig_B2_Residual_Diagnostics_for_the_Global_Prior_under_Group KFold.png", "Residual diagnostics for the global prior under Group KFold"],
     ], columns=["Manuscript figure", "Filename", "Purpose"])
     figure_manifest.to_csv(Path(OUT_FIG) / "00_Figure_Manifest.csv", index=False, encoding="utf-8-sig")
 
